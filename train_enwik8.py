@@ -36,7 +36,6 @@ def decode_tokens(tokens):
 
 # instantiate model
 
-
 model = TransformerLM(
     num_tokens = 256,
     dim = 512,
@@ -44,7 +43,8 @@ model = TransformerLM(
     max_seq_len = SEQ_LEN,
     heads = 8,
     causal = True,
-    only_norm = True
+    only_norm = True,
+    shared_kv = True
 )
 
 model = AutoregressiveWrapper(model)
@@ -103,7 +103,7 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
     if i % GENERATE_EVERY == 0:
         model.eval()
         inp = random.choice(val_dataset)[:-1]
-        inp = inp[:512]
+        inp = inp[:SEQ_LEN]
         prime = decode_tokens(inp)
         print(f'%s \n\n %s', (prime, '*' * 100))
 

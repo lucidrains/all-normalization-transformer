@@ -62,11 +62,14 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads = 8, causal = False):
+    def __init__(self, dim, heads = 8, causal = False, shared_kv = False):
         super().__init__()
         self.causal = causal
         self.heads = heads
-        self.to_qkv = nn.Linear(dim, dim * 3, bias = False)
+        self.shared_kv = shared_kv
+        self.num_qkv = 3 if not shared_kv else 2
+
+        self.to_qkv = nn.Linear(dim, dim * self.num_qkv, bias = False)
         self.to_out = nn.Linear(dim, dim)
 
         self.norm_g = nn.Parameter(torch.ones(1, heads, 1, 1))
@@ -75,7 +78,14 @@ class Attention(nn.Module):
     def forward(self, x):
         b, n, _, h, device = *x.shape, self.heads, x.device
         qkv = self.to_qkv(x)
-        q, k, v = rearrange(qkv, 'b n (qkv h d) -> qkv b h n d', qkv = 3, h = h)
+        qkv = rearrange(qkv, 'b n (qkv h d) -> qkv b h n d', qkv = self.num_qkv, h = h)
+
+        if self.shared_kv:
+            q, k = qkv
+            v = k
+        else:
+            q, k, v = qkv
+
         dots = torch.einsum('bhid,bhjd->bhij', q, k)
 
         if self.causal:
@@ -92,12 +102,12 @@ class Attention(nn.Module):
         return out
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads = 8, causal = False, only_norm = False):
+    def __init__(self, dim, depth, heads = 8, causal = False, only_norm = False, shared_kv = False):
         super().__init__()
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                Residual(PostNorm(dim, Attention(dim, heads, causal = causal))),
+                Residual(PostNorm(dim, Attention(dim, heads, causal = causal, shared_kv = shared_kv))),
                 Residual(PreNorm(dim, FeedForward(dim))) if not only_norm else nn.Identity(),
             ]))
 
@@ -108,13 +118,13 @@ class Transformer(nn.Module):
         return x
 
 class TransformerLM(nn.Module):
-    def __init__(self, *, num_tokens, dim, depth, max_seq_len, heads = 8, causal = False, only_norm = False):
+    def __init__(self, *, num_tokens, dim, depth, max_seq_len, heads = 8, causal = False, only_norm = False, shared_kv = False):
         super().__init__()
         self.max_seq_len = max_seq_len
 
         self.token_emb = nn.Embedding(num_tokens, dim)
         self.pos_emb = nn.Embedding(max_seq_len, dim)
-        self.transformer = Transformer(dim, depth, heads, causal = causal, only_norm = only_norm)
+        self.transformer = Transformer(dim, depth, heads, causal = causal, only_norm = only_norm, shared_kv = shared_kv)
         self.to_logits = nn.Linear(dim, num_tokens)
 
     def forward(self, x, **kwargs):
