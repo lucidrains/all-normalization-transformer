@@ -92,13 +92,13 @@ class Attention(nn.Module):
         return out
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads = 8, causal = False):
+    def __init__(self, dim, depth, heads = 8, causal = False, only_norm = False):
         super().__init__()
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 Residual(PostNorm(dim, Attention(dim, heads, causal = causal))),
-                Residual(PreNorm(dim, FeedForward(dim))),
+                Residual(PreNorm(dim, FeedForward(dim))) if not only_norm else nn.Identity(),
             ]))
 
     def forward(self, x):
@@ -108,13 +108,13 @@ class Transformer(nn.Module):
         return x
 
 class TransformerLM(nn.Module):
-    def __init__(self, *, num_tokens, dim, depth, max_seq_len, heads = 8, causal = False):
+    def __init__(self, *, num_tokens, dim, depth, max_seq_len, heads = 8, causal = False, only_norm = False):
         super().__init__()
         self.max_seq_len = max_seq_len
 
         self.token_emb = nn.Embedding(num_tokens, dim)
         self.pos_emb = nn.Embedding(max_seq_len, dim)
-        self.transformer = Transformer(dim, depth, heads, causal = causal)
+        self.transformer = Transformer(dim, depth, heads, causal = causal, only_norm = only_norm)
         self.to_logits = nn.Linear(dim, num_tokens)
 
     def forward(self, x, **kwargs):
