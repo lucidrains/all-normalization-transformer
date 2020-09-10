@@ -5,6 +5,21 @@ from einops import rearrange
 
 # helpers
 
+def cum_mean(t):
+    device = t.device
+    running_num = torch.arange(t.shape[-1], device=t.device) + 1
+    return t.cumsum(dim=-1) / running_num
+
+def normalize(t, eps=1e-8):
+    t -= t.mean(dim=-1, keepdim=True)
+    s = (t ** 2).mean(dim=-1, keepdim=True)
+    return t * torch.rsqrt(s + eps)
+
+def causal_normalize(t, eps=1e-8):
+    t -= cum_mean(t).diagonal(dim1=-2, dim2=-1)[..., None]
+    s = cum_mean(t ** 2).diagonal(dim1=-2, dim2=-1)[..., None]
+    return t * torch.rsqrt(s + eps)
+
 # helper classes
 
 class Residual(nn.Module):
@@ -37,8 +52,9 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads = 8):
+    def __init__(self, dim, heads = 8, causal = False):
         super().__init__()
+        self.causal = causal
         self.heads = heads
         self.to_qkv = nn.Linear(dim, dim * 3, bias = False)
         self.to_out = nn.Linear(dim, dim)
@@ -47,22 +63,30 @@ class Attention(nn.Module):
         self.norm_b = nn.Parameter(torch.zeros(1, heads, 1, 1))
 
     def forward(self, x):
-        b, *_, h = *x.shape, self.heads
+        b, n, _, h, device = *x.shape, self.heads, x.device
         qkv = self.to_qkv(x)
         q, k, v = rearrange(qkv, 'b n (qkv h d) -> qkv b h n d', qkv = 3, h = h)
         dots = torch.einsum('bhid,bhjd->bhij', q, k)
-        attn = F.normalize(dots, dim=-1) * self.norm_g + self.norm_b
-        out = torch.einsum('bhij,bhjd->bhid', attn, v)
+
+        if self.causal:
+            normed_attn = causal_normalize(dots)
+            mask = torch.ones(n, n, device = device).triu_(1).bool()
+            normed_attn.masked_fill_(mask, 0)
+        else:
+            normed_attn = normalize(dots)
+
+        normed_attn = normed_attn * self.norm_g + self.norm_b
+        out = torch.einsum('bhij,bhjd->bhid', normed_attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads = 8):
+    def __init__(self, dim, depth, heads = 8, causal = False):
         super().__init__()
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                Residual(PreNorm(dim, Attention(dim, heads))),
+                Residual(PreNorm(dim, Attention(dim, heads, causal = causal))),
                 Residual(PreNorm(dim, FeedForward(dim))),
             ]))
 
@@ -73,11 +97,11 @@ class Transformer(nn.Module):
         return x
 
 class TransformerLM(nn.Module):
-    def __init__(self, num_tokens, dim, depth, max_seq_len, heads = 8):
+    def __init__(self, num_tokens, dim, depth, max_seq_len, heads = 8, causal = False):
         super().__init__()
         self.token_emb = nn.Embedding(num_tokens, dim)
         self.pos_emb = nn.Embedding(max_seq_len, dim)
-        self.transformer = Transformer(dim, depth, heads)
+        self.transformer = Transformer(dim, depth, heads, causal = causal)
         self.to_logits = nn.Linear(dim, num_tokens)
 
     def forward(self, x):
