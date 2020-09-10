@@ -1,6 +1,6 @@
 ## Transformer with Normalized Attention (wip)
 
-A Transformer that consists of only normalization as its non-linearity, as proposed in <a href="https://arxiv.org/abs/2005.09561">this paper</a>. This repository will build on this and attempt to make this work for auto-regressive scenario. Experiments pending.
+A Transformer that consists of only normalization as its sole non-linearity, as proposed in the paper <a href="https://arxiv.org/abs/2005.09561">Normalized Attention Without Probability Cage</a>. This repository will build on the paper's contributions and attempt to make it work for the auto-regressive case.
 
 ## Citations
 
