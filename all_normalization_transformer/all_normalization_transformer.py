@@ -66,6 +66,7 @@ class Attention(nn.Module):
         super().__init__()
         self.causal = causal
         self.heads = heads
+        self.scale = dim ** -0.5
         self.shared_kv = shared_kv
         self.num_qkv = 3 if not shared_kv else 2
 
@@ -86,7 +87,7 @@ class Attention(nn.Module):
         else:
             q, k, v = qkv
 
-        dots = torch.einsum('bhid,bhjd->bhij', q, k)
+        dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
 
         if self.causal:
             normed_attn = causal_normalize(dots)
