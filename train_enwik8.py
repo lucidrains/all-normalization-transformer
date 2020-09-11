@@ -39,7 +39,7 @@ def decode_tokens(tokens):
 model = TransformerLM(
     num_tokens = 256,
     dim = 512,
-    depth = 24,
+    depth = 12,
     max_seq_len = SEQ_LEN,
     heads = 8,
     causal = True,

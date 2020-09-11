@@ -90,14 +90,17 @@ class Attention(nn.Module):
         dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
 
         if self.causal:
-            normed_attn = causal_normalize(dots)
             mask = torch.ones(n, n, device = device).triu_(1).bool()
-            normed_attn.masked_fill_(mask, 0)
-        else:
-            normed_attn = normalize(dots)
+            dots.masked_fill_(mask, 0.)
 
-        normed_attn = normed_attn * self.norm_g + self.norm_b
-        out = torch.einsum('bhij,bhjd->bhid', normed_attn, v)
+        normalize_fn = causal_normalize if self.causal else normalize
+        normed_attn = normalize_fn(dots)
+        attn = normed_attn * self.norm_g + self.norm_b
+
+        if self.causal:
+            attn.masked_fill_(mask, 0.)
+
+        out = torch.einsum('bhij,bhjd->bhid', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         out =  self.to_out(out)
         return out
